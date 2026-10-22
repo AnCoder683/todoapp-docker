@@ -9,7 +9,7 @@
 Tự build một app đơn giản để **thấy Docker được dùng thế nào** trong quy trình dev → build → production, rồi **deploy công khai lên VPS** làm portfolio (link demo + repo có README, CI).
 Không cần app xịn.
 
-**Nguyên tắc:** học ngay trên app, **chỉ cần Docker** (máy không cài Node), dev **trong container**, **một Dockerfile nhiều target** (dev/prod). Mỗi khái niệm thử bằng lệnh `docker` trước, rồi mới viết gọn bằng compose.
+**Nguyên tắc:** học ngay trên app, **chỉ cần Docker** (máy không cài Node), dev **trong container**, **một Dockerfile nhiều target** (dev/prod). **Từ 2026-10-21 (cách B): dùng compose ngay từ đầu** (người học đã biết compose, muốn sát thực tế); `compose.yaml` lớn dần qua từng bước. Lệnh `docker` trần chỉ dùng khi cần thí nghiệm để thấy một cờ làm gì.
 
 ## Cách làm việc
 - **Phần Docker + setup**: người học tự gõ. Claude hướng dẫn **cầm tay chỉ việc**: tạo file nào, từng dòng viết gì kèm giải thích.
@@ -64,7 +64,9 @@ frontend/Dockerfile
 ## Hiện trạng project
 ```
 todoapp/
-├── .git/         # repo rỗng, chưa có commit (có thể xoá để tự git init ở 0.8)
+├── .git/           # remote origin = git@github.com:AnCoder683/todoapp-docker.git
+├── .gitattributes
+├── .gitignore
 ├── CLAUDE.md
 └── PROGRESS.md
 ```
@@ -88,22 +90,24 @@ Docker: không còn container/volume/mạng nào của todoapp.
   - Bài 6 (`~/.ssh/config`) và Bài 7 (`authorized_keys`) **dời sang D1** (2026-10-21): chỉ có ý nghĩa khi có VPS thật; học đúng lúc dùng. Mức SSH cần: dùng được + gỡ lỗi thường gặp, không cần bên trong.
   - `git config` xong (2026-10-21): `user.email=119518114+AnCoder683@users.noreply.github.com` (Claude chạy giúp theo yêu cầu), GitHub bật "Keep my email addresses private" + "Block command line pushes that expose my email".
   - Đã kiểm tra (2026-10-21): `.pub` trùng `github.com/AnCoder683.keys`, `known_hosts` có 3 host key GitHub đúng fingerprint, `ssh -T` OK.
-- [ ] **0.4 Repo.** `git init`, `.gitignore`, `.gitattributes` (`* text=auto eol=lf`), commit đầu (`CLAUDE.md`, `PROGRESS.md`), tạo repo GitHub mới, `git remote add origin ...`, `git push -u origin main`.
+- [x] **0.4 Repo.** `.gitignore` (`.env`, `node_modules/`, `dist/`, `generated/`), `.gitattributes` (`* text=auto eol=lf`), commit đầu `aa7a459` (tác giả email noreply), repo **public** `github.com/AnCoder683/todoapp-docker` (remote SSH), `git push -u origin main` (2026-10-21). Theo yêu cầu, Claude tạo 2 file cấu hình + chạy commit; người học tạo repo + push. Repo cũ `AnCoder683/TodoApp` để nguyên.
 
 Tự kiểm tra 0:
 1. `sudo` để làm gì? Vì sao không làm việc hằng ngày bằng root?
 2. Linux xác định chủ file bằng tên hay bằng số (UID/GID)? `ls -la` cho biết gì?
 3. SSH key: file nào giữ bí mật, file nào dán lên GitHub?
 
+**Đã qua (2026-10-21):** câu 1 đúng; câu 2 đúng (bằng số; giải thích được `rw-------` = 4+2+0/0/0, Claude bổ sung các cột còn lại: loại file, số link, chủ/nhóm, kích thước, thời gian sửa); câu 3 đúng (`id_ed25519` bí mật, quyền 600; `.pub` lên GitHub).
+
 ## Lộ trình
 
 ### Chặng A: Dev trong container
-- [ ] **A0. Khung backend (chạy bằng container tạm).** Người học: `mkdir backend`, `npm init -y`, `npm install express@5` qua `docker container run --rm -u ... -v ... -w ...` (vì sao cần `-u`, vì sao cờ phải đứng trước tên image). Claude (hỏi trước): `src/index.js` với `GET /api/health`, bắt SIGTERM. Chạy thử bằng `docker container run ... -p 3000:3000 node:24-alpine node src/index.js`.
-- [ ] **A1. Dockerfile đầu tiên.** `backend/Dockerfile` stage `base` + `deps` + `dev` (thêm `build` khi có Prisma ở A3); `backend/.dockerignore` (`node_modules`, `generated`, `.env`). `docker build --target dev -t todo-api:dev ./backend`. Học: build context, `.dockerignore`, **cache layer** (sửa `src` → chỉ `COPY . .` chạy lại; sửa `package.json` → `npm ci` chạy lại), `docker history`, exec form vs shell form, `FROM ... AS`, `--target`.
-- [ ] **A2. Postgres bằng `docker run`.** `postgres:17-alpine`, `-e POSTGRES_*`, named volume `pgdata`, `psql` qua `docker exec`. Thí nghiệm: xoá container rồi chạy lại → dữ liệu còn; đổi `POSTGRES_PASSWORD` sau khi có dữ liệu → không tác dụng (vì sao).
-- [ ] **A3. Network + Prisma.** `docker network create todo-net`, chạy db và backend chung mạng, gọi `db:5432`. Thí nghiệm: dùng `localhost` → lỗi; mạng `bridge` mặc định không gọi nhau bằng tên được. Rồi: cài Prisma 7, model `Todo`, `migrate dev --name init` + `prisma generate`; Claude (hỏi trước) viết API todos. Thêm stage `build` vào Dockerfile.
-- [ ] **A4. Hot reload.** Bind mount `-v "$PWD/backend":/app` + volume ẩn danh `-v /app/node_modules` (che / không che). `node --watch` tự restart khi sửa file.
-- [ ] **A5. Compose.** Viết lại A2–A4 thành `compose.yaml`: `db` (healthcheck `pg_isready -h 127.0.0.1`, `$$`, cổng `127.0.0.1:5432:5432`, volume) + `backend` (`build: target: dev`, `depends_on: condition: service_healthy`, `DATABASE_URL` qua `environment`). **Một `.env` ở gốc** + `.env.example`. `down` vs `down -v`. So sánh với các lệnh `docker` đã gõ.
+- [x] **A0. Khung backend bằng compose.** *(Xong 2026-10-21: vấp đặt `compose.yml` trong `backend/` → `./backend` thành `backend/backend` do root tạo → EACCES; manh mối: tên mạng `backend_default`. `curl /api/health` OK, `time docker compose stop` 0.16s nhờ bắt SIGTERM. File compose tên `compose.yml`, `ports` còn `3000:3000`, mạng thừa `backend_default` có thể còn.)* `mkdir backend` (vì sao phải tạo trước: thư mục bind mount chưa có thì Docker tạo nó thuộc root). Người học viết `compose.yaml` tối giản: service `backend` dùng thẳng `image: node:24-alpine`, `user: "1000:1000"`, `working_dir: /app`, `volumes: - ./backend:/app`, `ports`, `command`. Rồi `docker compose run --rm backend npm init -y`, `... npm install express@5`. Claude (hỏi trước): `package.json` (`name: todo-api`, `type: module`) + `src/index.js` (`GET /api/health`, nghe `0.0.0.0`, bắt SIGTERM/SIGINT). `docker compose up`. Thí nghiệm: `docker compose stop` có/không bắt SIGTERM (PID 1).
+- [ ] **A1. Dockerfile đầu tiên.** `backend/Dockerfile` stage `base` + `deps` + `dev`; `backend/.dockerignore` (`node_modules`, `generated`, `.env`). Trong compose đổi `image:` thành `build: { context: ./backend, target: dev }`. Học: build context, `.dockerignore`, **cache layer** (sửa `src` → chỉ `COPY . .` chạy lại; sửa `package.json` → `npm ci` chạy lại), `docker history`, exec form vs shell form, `FROM ... AS`, `--target`, `up --build`.
+- [ ] **A2. Service `db`.** `postgres:17-alpine`, `environment: POSTGRES_*`, named volume `pgdata`, `psql` qua `docker compose exec`. Thí nghiệm: `down` rồi `up` → dữ liệu còn; `down -v` → mất; đổi `POSTGRES_PASSWORD` sau khi có dữ liệu → không tác dụng (vì sao). Cổng `127.0.0.1:5432:5432`.
+- [ ] **A3. Network + Prisma.** Compose tự tạo mạng `todoapp_default`, gọi nhau bằng tên service `db:5432`. Thí nghiệm: dùng `localhost` → lỗi; `docker network ls/inspect`. Rồi: cài Prisma 7, model `Todo`, `migrate dev --name init` + `prisma generate`; Claude (hỏi trước) viết API todos. Thêm stage `build` vào Dockerfile. `DATABASE_URL` qua `environment`.
+- [ ] **A4. Hot reload.** Bind mount `./backend:/app` + volume ẩn danh `/app/node_modules` (che / không che, sau khi có Dockerfile). `node --watch` tự restart khi sửa file.
+- [ ] **A5. Hoàn thiện compose dev.** healthcheck db (`pg_isready -h 127.0.0.1`, `$$`), `depends_on: condition: service_healthy`, **một `.env` ở gốc** + `.env.example`. `down` vs `down -v`. Đối chiếu từng dòng compose với cờ `docker` tương ứng.
 - [ ] **A6. Service `frontend`.** `frontend/Dockerfile` stage `base` + `deps` + `dev` (`--host`), `.dockerignore`; compose: proxy `/api` tới `http://backend:3000`, bind mount + volume ẩn danh.
 - [ ] **A7. Vòng đời dev.** `docker compose exec backend npx prisma migrate dev` + `prisma generate`; thêm thư viện bằng `exec ... npm install` rồi `up -d --build -V`.
 - [ ] **A8. Dev Containers** (tuỳ chọn): `.devcontainer/devcontainer.json` trỏ vào service backend.
@@ -163,26 +167,25 @@ Tự kiểm tra B:
 | 10 | **Code app: Claude viết, hỏi trước.** Không đụng phần Docker | Phần app không phải trọng tâm |
 | 11 | Deploy công khai làm portfolio; **mua VPS ở chặng D** | VPS tính tiền theo tháng |
 | 12 | **Một `Dockerfile` nhiều target** mỗi app (`base → deps → build → dev` + `prod-deps` + `runtime` cuối file) | Dev và prod dùng chung base + bước cài; `docker build .` mặc định ra prod |
-| 13 | Dev **trong container** từ đầu; mỗi khái niệm thử bằng lệnh `docker` trước, compose sau | Compose chỉ là viết gọn của lệnh `docker` |
+| 13 | Dev **trong container** từ đầu. ~~Mỗi khái niệm thử bằng lệnh `docker` trước, compose sau~~ → thay bằng #18 | Compose chỉ là viết gọn của lệnh `docker` |
 | 14 | **Chỉ cần Docker** (không cài Node trên máy), Node 24 LTS (`node:24-alpine`) chỉ trong image | Sát thực tế VPS |
 | 15 | Người học **tự setup** môi trường, Claude chỉ hướng dẫn | Học luôn Linux |
 | 16 | **Ubuntu cài thẳng** thay cho WSL2 | Giống VPS hơn |
 | 17 | **Lần 3: làm lại từ thư mục trống**, đi đúng thứ tự lộ trình | Lần 2 đi lệch (compose trước Dockerfile) |
+| 18 | **Cách B (2026-10-21): compose ngay từ A0**, `compose.yaml` lớn dần (image → build target dev → thêm db → ...). Lệnh `docker` trần chỉ để thí nghiệm | Người học đã biết compose; thực tế không ai setup bằng `docker run` từng lệnh. **Chốt kiểu "container-first"** (backend + db trong compose, Dockerfile target dev, Dev Containers), không phải kiểu phổ biến nhất (Node trên máy, chỉ db trong Docker). Mỗi bước Claude gắn nhãn "thực tế"/"chỉ để học". Rủi ro (giống lần 2): dùng compose như bùa → mỗi dòng mới phải giải thích nó ứng với cờ `docker` nào và vì sao |
 
 ## App (kế hoạch, chưa có code)
 - Bảng `Todo`: `id` (autoincrement), `title`, `completed` (mặc định false), `createdAt`, `updatedAt` (`@updatedAt`)
 - API (`backend/src`): `GET /api/health`, `GET/POST /api/todos`, `PATCH/DELETE /api/todos/:id`. Validate: 400 nếu title rỗng / id không phải số / JSON sai; 404 nếu không có todo (Prisma `P2025`). Đóng server + `prisma.$disconnect()` khi nhận SIGTERM.
 
 ## Đang ở đâu
-**2026-10-21:** **0.3 xong** (SSH đủ dùng, Bài 6–7 dời sang D1; `git config` email noreply).
+**2026-10-21:** **A0 xong (cách B, compose)**. Có `compose.yml` (service `backend`, `image: node:24-alpine`), `backend/package.json` (`todo-api`, `type: module`, express 5), `backend/src/index.js`.
 
-**Bước tiếp theo:**
-1. **0.4 Repo**: `git init` (đã có `.git/` rỗng), `.gitignore`, `.gitattributes`, commit đầu, tạo repo GitHub, push. **Lưu ý:** GitHub đã có repo cũ `AnCoder683/TodoApp` → chọn tên khác hoặc xử lý repo cũ trước.
-2. Trả lời "Tự kiểm tra 0" → sang **A0**.
+**Bước tiếp theo:** commit A0 → **A1**: `backend/Dockerfile` (`base` + `deps` + `dev`) + `.dockerignore`, compose đổi `image:` → `build: target: dev`.
 
 ## Nhật ký
 - **2026-10-13 → 10-15 (lần 1)**: Windows, chặng 0–1 + đầu chặng 2. Quyết định deploy làm portfolio, Dockerfile nhiều target. Thấy nền chưa vững → làm lại.
 - **2026-10-16 (lần 2)**: chuyển sang Ubuntu cài thẳng, `~/code/todoapp`. Đã làm (ngoài thứ tự): compose với db, Prisma 7 + migration, API Express trong container tạm, test curl OK. Học được: cờ `-u "$(id -u):$(id -g)"`, cờ phải đứng trước tên image, `$$` trong healthcheck, `prisma7.config.ts` phải đổi tên. Cuối buổi thấy đã đi lệch lộ trình → `docker compose down -v`, **xoá sạch thư mục**, viết lại `CLAUDE.md` + `PROGRESS.md`, lộ trình thêm **A0** (khung backend) và chuyển Prisma vào A3. Bắt đầu lần 3 từ 0.2.
 - **2026-10-16 (lần 3, buổi chiều)**: 0.2 xong phần 1–2 (UID/GID, `/etc/passwd`, `/etc/shadow`, `sudo`, nhóm `sudo`/`docker`/`lxd`), bỏ qua phần 3. Sang 0.3: SSH khó → dùng ẩn dụ con dấu/mẫu dấu + widget 7 bước, giải thích host key/known_hosts. Tìm nguồn chính thức, soạn lộ trình SSH 7 bài. Người học chưa đọc lý thuyết → tạm dừng, **buổi sau học SSH lại từ số 0**.
 - **2026-10-20**: SSH thực hành từ số 0 (key cũ của lần trước bị ghi đè/xoá). Vấp: gõ `ed255519`; `ssh-keygen` không chạy được qua `!` trong chat (cần terminal riêng vì hỏi passphrase); lần đầu bỏ qua bước ② vì `known_hosts` còn cũ → xoá hết làm lại một mạch, lần này có so fingerprint host + `yes`. Học thêm: hộp thoại unlock của GNOME agent, `UpdateHostKeys` (1 lần `yes` → 3 dòng), `HashKnownHosts`, `git` không tham gia `ssh -T` (git chỉ mượn ống ssh khi push/pull).
-- **2026-10-21**: hỏi vì sao cần public key để biết là server/client → giải thích MITM (DH đúng luật vẫn bị đứng giữa), chữ ký gắn session ID nên không chuyển tiếp được, 2 lần so ở bước ②. Đi sâu vào cách soi (pha hai bát) thì người học thấy quá sâu → chốt 5 ý tối thiểu. Câu 5 đúng; bổ sung `ssh-keygen -R`, vụ GitHub đổi RSA host key 3/2023, rebuild VPS ở chặng D. Thí nghiệm `chmod 644`: agent từ chối ký (`agent refused operation`) thay vì cảnh báo `UNPROTECTED`; `chmod 600` → OK. Người học hỏi có cần biết sâu không → chốt mức "dùng được + gỡ lỗi": Bài 5 rút gọn, Bài 6–7 dời sang D1. Sang `git config`. `git config` email noreply + bật 2 công tắc email trên GitHub → **0.3 xong**.
+- **2026-10-21**: hỏi vì sao cần public key để biết là server/client → giải thích MITM (DH đúng luật vẫn bị đứng giữa), chữ ký gắn session ID nên không chuyển tiếp được, 2 lần so ở bước ②. Đi sâu vào cách soi (pha hai bát) thì người học thấy quá sâu → chốt 5 ý tối thiểu. Câu 5 đúng; bổ sung `ssh-keygen -R`, vụ GitHub đổi RSA host key 3/2023, rebuild VPS ở chặng D. Thí nghiệm `chmod 644`: agent từ chối ký (`agent refused operation`) thay vì cảnh báo `UNPROTECTED`; `chmod 600` → OK. Người học hỏi có cần biết sâu không → chốt mức "dùng được + gỡ lỗi": Bài 5 rút gọn, Bài 6–7 dời sang D1. Sang `git config`. `git config` email noreply + bật 2 công tắc email trên GitHub → **0.3 xong**. 0.4: tạo `.gitignore`/`.gitattributes` (Claude lỡ ghi đè `.gitignore` người học vừa tạo, đã báo), commit đầu, repo `todoapp-docker`, push qua SSH OK. Tự kiểm tra 0 đạt → **xong chặng 0**. Vào A0: `npm init` bằng `docker run` tạm (tên ra `app` vì `-w /app`). Người học hỏi thực tế dùng compose thế nào, có ai setup bằng `docker run` từng container không (không) → **chọn cách B: compose ngay từ đầu**, xoá `backend/`, sửa lộ trình A0–A5, thêm quyết định #18. A0 (cách B) xong: `compose run --rm backend npm init/install`, Claude viết `src/index.js`, `up -d`/`ps`/`logs`, stop 0.16s.
