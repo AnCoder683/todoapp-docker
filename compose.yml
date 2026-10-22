@@ -1,10 +1,7 @@
 services:
   backend:
-    image: node:24-alpine
-    user: "1000:1000"
-    working_dir: /app
-    volumes:
-      - ./backend:/app
+    build:
+      context: ./backend
+      target: dev
     ports:
       - "3000:3000"
-    command: node src/index.js

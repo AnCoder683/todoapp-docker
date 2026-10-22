@@ -1,0 +1,11 @@
+FROM node:24-alpine AS base
+WORKDIR /app
+
+FROM base AS deps
+COPY package.json package-lock.json ./
+RUN npm ci
+
+FROM deps AS dev
+COPY . .
+USER node
+CMD ["node", "src/index.js"]
